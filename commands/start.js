@@ -3,16 +3,17 @@ const {bot} = require("../services/bot.js");
 const {Keyboard, InlineKeyboard} = require("grammy");
 const {Menu, MenuRange} = require("@grammyjs/menu");
 
+const bot_name = process.env.BOT_NAME;
+
 function formatDateWithHours(isoDate) {
   const date = new Date(isoDate);
-
+  date.setHours(10);
   // Extract the date components
   const day = date.getDate().toString().padStart(2, "0");
   const month = (date.getMonth() + 1).toString().padStart(2, "0"); // Month is zero-based
   const year = date.getFullYear();
   const hours = date.getHours().toString().padStart(2, "0");
   const minutes = date.getMinutes().toString().padStart(2, "0");
-
   return `${day}-${month}-${year} ${hours}:${minutes}`;
 }
 
@@ -39,6 +40,7 @@ const {
   EDIT_GROUP_NAME,
   GET_GROUP_JOIN_LINK,
   DELETE_GROUP,
+  DELETE_USERS_BTN,
 } = require("../utils/keyboard_constants");
 const {
   HOME,
@@ -62,6 +64,7 @@ const ObjectId = require("mongodb").ObjectId;
 const User = require("../model/user");
 const Group = require("../model/group");
 const Payment = require("../model/payment");
+const Join = require("../model/join");
 
 const keyboard_group_detail = new Keyboard()
   .text(SPEND_MONEY)
@@ -77,18 +80,34 @@ const keyboard_group_detail = new Keyboard()
 
 const keyboard_group_mange = new Keyboard()
   .text(CLEAR_EXPENSES)
-  .row()
   .text(EDIT_GROUP_NAME)
   .row()
   .text(GET_GROUP_JOIN_LINK)
   .row()
+  .text(DELETE_USERS_BTN)
   .text(DELETE_GROUP)
   .row()
   .text(BACK)
   .resized();
 
+const keyboard_home = new Keyboard()
+  .text(GROUPS)
+  .row()
+  .text(CREATE_GROUP)
+  .row()
+  .resized();
+
 async function sendGroupList(ctx) {
-  await ctx.reply("Guruhlar: ", {reply_markup: groups_menu});
+  const chat_id = ctx.message.from.id;
+  const user = await User.findByChatId(chat_id);
+
+  if (user?.groups?.length) {
+    await ctx.reply("Guruhlar: ", {reply_markup: groups_menu});
+  } else {
+    await ctx.reply(
+      "Sizda guruhlar yo'q. \n\nGuruh yaratishingiz yoki guruhga qo'shilishingiz kerak"
+    );
+  }
 }
 
 async function returnHomePageButtons(text, ctx) {
@@ -102,113 +121,7 @@ async function returnHomePageButtons(text, ctx) {
   });
 }
 
-const groups_menu = new Menu("groups");
-bot.use(groups_menu);
-groups_menu.dynamic(async (ctx) => {
-  const chat_id = ctx.message?.from?.id || ctx?.update?.callback_query?.from.id;
-
-  const user = await User.findGroupsByChatId(chat_id);
-
-  const range = new MenuRange();
-
-  user.groups.forEach((group) => {
-    range
-      .text(group.name, async () => {
-        await User.updateOne(
-          {_id: user._id},
-          {$set: {selectedGroupId: group._id, screen: GROUP_DETAIL}, new: true}
-        );
-
-        await ctx.reply(
-          `${group.name} guruhi uchun xarajat yozishingiz va hisob-kitoblarni ko'rishingiz mumkin`,
-          {
-            reply_markup: keyboard_group_detail,
-          }
-        );
-      })
-      .row();
-  });
-  return range;
-});
-
-bot.command("start", async (ctx) => {
-  const join_group_id = ObjectId.isValid(ctx?.match) ? ctx?.match : null;
-  const chat_id = ctx.message.chat.id;
-  const name = ctx.message.chat.first_name;
-  const user = await User.findOne({chat_id: chat_id});
-  const group = await Group.findOne({_id: join_group_id});
-  const user_payload = {
-    name,
-    chat_id,
-  };
-  if (!user) {
-    let newUser = new User(user_payload);
-    newUser.save();
-    if (group) {
-      await User.followNewGroup(newUser._id, group._id);
-    }
-  } else {
-    await User.updateOne(
-      {chat_id: user.chat_id},
-      {
-        $set: user_payload,
-      }
-    );
-    if (group) {
-      await User.followNewGroup(user._id, group._id);
-    }
-  }
-
-  returnHomePageButtons(
-    "Guruhlar o'rtasida xisob-kitobni amalga oshiruvchi botga xush kelibsiz",
-    ctx
-  );
-});
-
-// HEARS
-
-// HOME SCREEN
-bot.hears(GROUPS, async (ctx) => {
-  sendGroupList(ctx);
-});
-bot.hears(CREATE_GROUP, async (ctx) => {
-  const chat_id = ctx.message.from.id;
-
-  const updatedUser = await User.findOneAndUpdate(
-    {chat_id},
-    {$set: {action: CREATE_GROUP_ACTION, screen: GROUP_CREATING}}
-  );
-
-  if (updatedUser) {
-    const keyboard = new Keyboard().text(BACK).row().resized();
-
-    await ctx.reply("Guruh nomini kiriting:", {
-      reply_markup: keyboard,
-    });
-  }
-});
-
-// GROUP DETAIL - MAIN BOARD
-bot.hears(SPEND_MONEY, async (ctx) => {
-  const chat_id = ctx.message.from.id;
-  const updatedUser = await User.updateOne(
-    {chat_id},
-    {$set: {action: SPEND_MONEY_ACTION, screen: WRITING_PAYMENT}}
-  );
-
-  if (updatedUser) {
-    const keyboard = new Keyboard().text(BACK).row().resized();
-    await ctx.reply(
-      "Xarajat uchun summa va izohni kiriting \nIzoh kiritish ixtiyoriy \n \n Masalan: 12000 nonga",
-      {
-        reply_markup: keyboard,
-      }
-    );
-  }
-});
-
-// GET CALCULATIONS
-bot.hears(CALCULATION, async (ctx) => {
+async function calculationExpenses(ctx, send_everyone = false) {
   const chat_id = ctx.message.from.id;
   const user = await User.findByChatId(chat_id);
   const group_id = user.selectedGroupId;
@@ -244,7 +157,263 @@ bot.hears(CALCULATION, async (ctx) => {
     sending_text = sending_text + follower.name + `  ____  ` + given + `\n`;
   }
 
-  ctx.reply(sending_text);
+  if (send_everyone) {
+    for (const follower of followers) {
+      bot.api.sendMessage(follower.chat_id, sending_text);
+    }
+  } else {
+    ctx.reply(sending_text);
+  }
+}
+
+async function clearGroupExpenses(
+  chat_id,
+  selected_group_id,
+  is_home = false,
+  append_text = ""
+) {
+  await User.updateMany(
+    {"totalSpent.group": selected_group_id},
+    {$pull: {totalSpent: {group: selected_group_id}}}
+  );
+
+  await Payment.deleteMany({group: selected_group_id});
+
+  const group = await Group.findByIdAndUpdate(selected_group_id, {
+    totalSpent: 0,
+  });
+
+  await User.findOneAndUpdate(
+    {chat_id},
+    {$set: {action: "", screen: GROUP_DETAIL}}
+  );
+
+  const followers = await User.find({groups: selected_group_id.toString()});
+
+  for (const follower of followers) {
+    bot.api.sendMessage(
+      follower.chat_id,
+      `${group.name} guruh xarajatlari tozalandi ${append_text}`,
+      {
+        reply_markup: is_home ? keyboard_home : keyboard_group_detail,
+      }
+    );
+  }
+}
+
+const groups_menu = new Menu("groups");
+bot.use(groups_menu);
+groups_menu.dynamic(async (ctx) => {
+  const chat_id = ctx.message?.from?.id || ctx?.update?.callback_query?.from.id;
+
+  const user = await User.findGroupsByChatId(chat_id);
+
+  const range = new MenuRange();
+
+  user?.groups?.forEach((group) => {
+    range
+      .text(group.name, async () => {
+        await User.updateOne(
+          {_id: user._id},
+          {$set: {selectedGroupId: group._id, screen: GROUP_DETAIL}, new: true}
+        );
+
+        await ctx.reply(
+          `${group.name} guruhi uchun xarajat yozishingiz va hisob-kitoblarni ko'rishingiz mumkin`,
+          {
+            reply_markup: keyboard_group_detail,
+          }
+        );
+      })
+      .row();
+  });
+  return range;
+});
+
+const user_delete_menu = new Menu("users_delete");
+bot.use(user_delete_menu);
+user_delete_menu.dynamic(async (ctx) => {
+  const chat_id = ctx.message?.from?.id || ctx?.update?.callback_query?.from.id;
+  const user = await User.findGroupsByChatId(chat_id);
+  const range = new MenuRange();
+
+  const group = await Group.findOne({
+    admin: user._id,
+    _id: user.selectedGroupId,
+  });
+
+  if (user._id.toString() === group.admin.toString()) {
+    const followers = await User.find({groups: group._id});
+    for (const follower of followers.filter((i) => i.chat_id !== chat_id)) {
+      range
+        .text(`❌ ${follower.name}`, async () => {
+          await User.updateOne(
+            {_id: user._id},
+            {
+              $set: {screen: GROUP_MANAGE_SCREEN},
+              new: true,
+            }
+          );
+
+          await User.updateOne(
+            {_id: follower._id},
+            {$set: {selectedGroupId: null}, $pull: {groups: group._id}}
+          );
+
+          const keyboard_home = new Keyboard()
+            .text(GROUPS)
+            .row()
+            .text(CREATE_GROUP)
+            .resized();
+
+          bot.api.sendMessage(
+            follower.chat_id,
+            `Siz ${group.name} guruhidan chiqarildingiz`,
+            {
+              reply_markup: keyboard_home,
+            }
+          );
+
+          await User.updateOne(
+            {_id: follower.id},
+            {$set: {screen: HOME, action: ""}, new: true}
+          );
+
+          ctx.reply(
+            `${follower.name} ${group.name} guruhidan o'chirildi \n\nQolgan foydalanuvchilar:`,
+            {
+              reply_markup: user_delete_menu,
+            }
+          );
+        })
+        .row();
+    }
+  }
+
+  return range;
+});
+
+bot.command("start", async (ctx) => {
+  const join_id = ObjectId.isValid(ctx?.match) ? ctx?.match : null;
+  const chat_id = ctx.message.chat.id;
+  const name = ctx.message.chat.first_name;
+  const user = await User.findOne({chat_id: chat_id});
+  const join = await Join.findOne({_id: join_id});
+  let group = null;
+  if (join) {
+    group = await Group.findOne({_id: join.group});
+  }
+
+  async function FollowNewGroup(user_id, group_id) {
+    if (join && group) {
+      const find_user = join.users.find((item) => item.toString() == user_id);
+
+      if (!find_user) {
+        await User.findByIdAndUpdate(
+          user_id,
+          {$addToSet: {groups: group_id}},
+          {new: true}
+        );
+
+        await Join.findByIdAndUpdate(
+          join._id,
+          {$addToSet: {users: user_id}},
+          {new: true}
+        );
+
+        await User.updateOne(
+          {_id: user_id},
+          {$set: {selectedGroupId: group_id, screen: GROUP_DETAIL}, new: true}
+        );
+
+        await ctx.reply(
+          `${group.name} guruhi uchun xarajat yozishingiz va hisob-kitoblarni ko'rishingiz mumkin`,
+          {
+            reply_markup: keyboard_group_detail,
+          }
+        );
+      }
+    }
+  }
+
+  const user_payload = {
+    name,
+    chat_id,
+  };
+  if (!user) {
+    let newUser = new User(user_payload);
+    newUser.save();
+    if (true) {
+      // user?.groups?.length < 5;
+      FollowNewGroup(newUser._id, group?._id);
+    } else {
+      await ctx.reply("Maksimal guruhlar soni 5 ta");
+    }
+  } else {
+    await User.updateOne(
+      {chat_id: user.chat_id},
+      {
+        $set: user_payload,
+      }
+    );
+
+    FollowNewGroup(user._id, group?._id);
+  }
+
+  await returnHomePageButtons(
+    "Guruhlar o'rtasida xisob-kitobni amalga oshiruvchi botga xush kelibsiz",
+    ctx
+  );
+});
+
+// HEARS
+
+// HOME SCREEN
+bot.hears(GROUPS, async (ctx) => {
+  sendGroupList(ctx);
+});
+bot.hears(CREATE_GROUP, async (ctx) => {
+  const chat_id = ctx.message.from.id;
+
+  const user = await User.findOne({chat_id}).populate("groups");
+
+  if (true) {
+    // user?.groups?.length < 5
+    await User.findOneAndUpdate(
+      {chat_id},
+      {$set: {action: CREATE_GROUP_ACTION, screen: GROUP_CREATING}}
+    );
+    const keyboard = new Keyboard().text(BACK).row().resized();
+    await ctx.reply("Guruh nomini kiriting:", {
+      reply_markup: keyboard,
+    });
+  } else {
+    await ctx.reply("Maksimal guruhlar soni 5 ta");
+  }
+});
+
+// GROUP DETAIL - MAIN BOARD
+bot.hears(SPEND_MONEY, async (ctx) => {
+  const chat_id = ctx.message.from.id;
+  const updatedUser = await User.updateOne(
+    {chat_id},
+    {$set: {action: SPEND_MONEY_ACTION, screen: WRITING_PAYMENT}}
+  );
+
+  if (updatedUser) {
+    const keyboard = new Keyboard().text(BACK).row().resized();
+    await ctx.reply(
+      "Xarajat uchun summa va izohni kiriting \nIzoh kiritish ixtiyoriy \n \n Masalan: 12000 nonga",
+      {
+        reply_markup: keyboard,
+      }
+    );
+  }
+});
+
+// GET CALCULATIONS
+bot.hears(CALCULATION, async (ctx) => {
+  calculationExpenses(ctx);
 });
 
 // MY EXPENSES
@@ -366,51 +535,94 @@ bot.hears(GET_GROUP_JOIN_LINK, async (ctx) => {
   const group_id = user.selectedGroupId;
   const group = await Group.findById(group_id);
 
-  await User.findOneAndUpdate({chat_id}, {$set: {screen: GROUP_DETAIL}});
+  if (group) {
+    await User.findOneAndUpdate({chat_id}, {$set: {screen: GROUP_DETAIL}});
 
-  await ctx.reply(
-    `${group.name} guruhiga qo'shilish havolasi: \n \nhttps://t.me/xarajat_hisoblash_bot?start=${user.selectedGroupId}`,
-    {
-      reply_markup: keyboard_group_detail,
-    }
+    const join = new Join({group: group_id});
+    await join.save();
+
+    await ctx.reply(
+      `${group.name} guruhiga qo'shilish havolasi: \n \nhttps://t.me/${bot_name}?start=${join._id}`,
+      {
+        reply_markup: keyboard_group_detail,
+      }
+    );
+  }
+});
+
+bot.hears(DELETE_USERS_BTN, async (ctx) => {
+  const chat_id = ctx.message.from.id;
+  const user = await User.findByChatId(chat_id);
+
+  const group = await Group.findOne({_id: user.selectedGroupId});
+  const followers = await User.find({groups: group._id});
+  if (
+    followers.length === 1 &&
+    followers?.[0]?._id.toString() === group.admin.toString()
+  ) {
+    ctx.reply("Guruhda sizdan boshqa foydalanuvchi yo'q");
+    return;
+  }
+
+  if (group.totalSpent !== 0) {
+    calculationExpenses(ctx, true);
+  }
+
+  await ctx.reply("O'chirish kerak bo'lgan foydalanuvchi ustiga bosing: ", {
+    reply_markup: user_delete_menu,
+  });
+});
+
+bot.hears(DELETE_GROUP, async (ctx) => {
+  const chat_id = ctx.message.from.id;
+
+  const updatedUser = await User.findOneAndUpdate(
+    {chat_id},
+    {$set: {screen: DELETE_GROUP_SCREEN}}
   );
+
+  const group_id = updatedUser.selectedGroupId;
+  const group = await Group.findById(group_id);
+
+  if (updatedUser) {
+    const keyboard = new Keyboard().text(CONFIRM).row().text(BACK).resized();
+    await ctx.reply(
+      `${group.name} guruhi o'chirilishini tasdiqlang ❗️❗️ \n\nBarcha hisob-kitoblar 1 marta barcha foydalanuvchilarga yuboriladi \n\nGuruh o'chirilgandan keyin hisob-kitoblarni qayta ko'rib bo'lmaydi`,
+      {
+        reply_markup: keyboard,
+      }
+    );
+  }
 });
 
 bot.hears(CONFIRM, async (ctx) => {
   const chat_id = ctx.message.from.id;
   const user = await User.findByChatId(chat_id);
   const screen = user?.screen;
-
   const selected_group_id = user.selectedGroupId;
+
   if (screen === CLEAR_EXPENSES_SCREEN) {
+    await calculationExpenses(ctx, true);
+    await clearGroupExpenses(chat_id, selected_group_id);
+  }
+
+  if (screen === DELETE_GROUP_SCREEN) {
+    await clearGroupExpenses(
+      chat_id,
+      selected_group_id,
+      true,
+      "va guruh o'chirildi"
+    );
+
     await User.updateMany(
-      {"totalSpent.group": selected_group_id},
-      {$pull: {totalSpent: {group: selected_group_id}}}
+      {groups: selected_group_id},
+      {
+        $pull: {groups: selected_group_id},
+        $set: {selectedGroupId: null, screen: HOME},
+      }
     );
 
-    await Payment.deleteMany({group: selected_group_id});
-
-    const group = await Group.findByIdAndUpdate(selected_group_id, {
-      totalSpent: 0,
-    });
-
-    await User.findOneAndUpdate(
-      {chat_id},
-      {$set: {action: "", screen: GROUP_DETAIL}}
-    );
-
-    const followers = await User.find({groups: selected_group_id.toString()});
-
-    for (const follower of followers.filter((i) => i.chat_id !== chat_id)) {
-      bot.api.sendMessage(
-        follower.chat_id,
-        `${group.name} guruh xarajatlari tozalandi`
-      );
-    }
-
-    await ctx.reply(`${group.name} guruh xarajatlari tozalandi`, {
-      reply_markup: keyboard_group_detail,
-    });
+    await Group.findByIdAndDelete(selected_group_id);
   }
 });
 bot.hears(BACK, async (ctx) => {
@@ -442,6 +654,10 @@ bot.hears(BACK, async (ctx) => {
   }
 
   if (screen === GROUP_MANAGE_SCREEN) {
+    await User.findOneAndUpdate(
+      {chat_id},
+      {$set: {action: "", screen: GROUP_DETAIL}}
+    );
     await ctx.reply(`Orqaga`, {
       reply_markup: keyboard_group_detail,
     });
@@ -468,6 +684,17 @@ bot.hears(BACK, async (ctx) => {
       reply_markup: keyboard_group_mange,
     });
   }
+
+  if (screen === DELETE_GROUP_SCREEN) {
+    await User.findOneAndUpdate(
+      {chat_id},
+      {$set: {action: "", screen: GROUP_MANAGE_SCREEN}}
+    );
+
+    await ctx.reply(`O'chirish bekor qilindi`, {
+      reply_markup: keyboard_group_mange,
+    });
+  }
 });
 
 bot.on("message", async (ctx) => {
@@ -485,12 +712,16 @@ bot.on("message", async (ctx) => {
     });
 
     // Save the new group
-    await newGroup.save();
+    const group = await newGroup.save();
+
+    const join = new Join({group: group._id});
+    await join.save();
 
     await ctx.reply(
       `${message} guruh yaratildi \n \n Qo'shilish uchun havola:`
     );
-    await ctx.reply(`https://t.me/xarajat_hisoblash_bot?start=${newGroup._id}`);
+    await returnHomePageButtons("👇👇👇", ctx);
+    await ctx.reply(`https://t.me/${bot_name}?start=${join._id}`);
   }
 
   // spend money

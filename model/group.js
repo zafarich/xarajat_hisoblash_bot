@@ -27,7 +27,6 @@ GroupSchema.post("save", async function (group) {
     await User.findByIdAndUpdate(
       this.admin,
       {$addToSet: {groups: group._id}, $set: {action: ""}},
-
       {new: true}
     );
   } catch (error) {

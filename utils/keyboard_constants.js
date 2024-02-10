@@ -11,6 +11,7 @@ const CLEAR_EXPENSES = "🔄 Xarajatlarni tozalash";
 const EDIT_GROUP_NAME = "✏️ Guruh nomini o'zgartirish";
 const GET_GROUP_JOIN_LINK = "🔗 Guruhga qo'shilish havolasini olish";
 const DELETE_GROUP = "❌ Guruhni o'chirish";
+const DELETE_USERS_BTN = "❌ Foydalanuvchilarni o'chirish";
 
 const CONFIRM = "✅ Tasdiqlash";
 const BACK = "🔙 Orqaga";
@@ -29,4 +30,5 @@ module.exports = {
   EDIT_GROUP_NAME,
   GET_GROUP_JOIN_LINK,
   DELETE_GROUP,
+  DELETE_USERS_BTN,
 };
