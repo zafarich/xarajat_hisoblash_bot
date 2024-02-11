@@ -41,6 +41,7 @@ const {
   GET_GROUP_JOIN_LINK,
   DELETE_GROUP,
   DELETE_USERS_BTN,
+  DELETE_MY_EXPENSES,
 } = require("../utils/keyboard_constants");
 const {
   HOME,
@@ -200,6 +201,78 @@ async function clearGroupExpenses(
     );
   }
 }
+const expense_delete = new Menu("expense_delete")
+  .text(DELETE_MY_EXPENSES, async (ctx) => {
+    await ctx.reply("O'chirmoqchi bo'lgan xarajatni ustiga bosing", {
+      reply_markup: delete_expense_item,
+    });
+  })
+  .row();
+const delete_expense_item = new Menu("delete_expense_item");
+bot.use(delete_expense_item);
+bot.use(expense_delete);
+
+delete_expense_item.dynamic(async (ctx) => {
+  const chat_id = ctx.message?.from?.id || ctx?.update?.callback_query?.from.id;
+  const user = await User.findByChatId(chat_id);
+  const group_id = user.selectedGroupId;
+
+  const user_payments = await Payment.getUserPaymentsByGroup(
+    user._id,
+    group_id
+  );
+  const range = new MenuRange();
+
+  user_payments.forEach((payment, index) => {
+    range
+      .text(
+        `❌ ${formatDateWithHours(
+          payment.createdAt
+        )}  __  ${prettifyMoneyString(payment.amount)} ${payment.comment}`,
+        async () => {
+          await Payment.deletePaymentAndUpdateTotalSpent(payment._id);
+          await ctx.reply("Xarajat o'chirildi");
+        }
+      )
+      .row();
+  });
+
+  return range;
+});
+
+async function sendMyexpenses(ctx) {
+  const chat_id = ctx.message?.from?.id || ctx?.update?.callback_query?.from.id;
+  const user = await User.findByChatId(chat_id);
+  const group_id = user.selectedGroupId;
+  const group = await Group.findById(group_id);
+
+  const total_amount = await user.getTotalSpendingByGroup(group_id);
+
+  if (total_amount == 0) {
+    ctx.reply(`Siz ${group.name} guruhi uchun xarajat yozmagansiz`);
+    return;
+  }
+
+  const user_payments = await Payment.getUserPaymentsByGroup(
+    user._id,
+    group_id
+  );
+
+  let sending_text = `${group.name} guruhi uchun sarflagan xarajatlarim:  \n \n`;
+
+  user_payments.forEach((payment, index) => {
+    sending_text =
+      sending_text +
+      `${index + 1}. ${formatDateWithHours(
+        payment.createdAt
+      )}  ___  ${prettifyMoneyString(payment.amount)} ${payment.comment}\n`;
+  });
+  sending_text = sending_text + `\nJami: ${prettifyMoneyString(total_amount)}`;
+
+  await ctx.reply(sending_text, {
+    reply_markup: expense_delete,
+  });
+}
 
 const groups_menu = new Menu("groups");
 bot.use(groups_menu);
@@ -242,7 +315,7 @@ user_delete_menu.dynamic(async (ctx) => {
     _id: user.selectedGroupId,
   });
 
-  if (user._id.toString() === group.admin.toString()) {
+  if (group) {
     const followers = await User.find({groups: group._id});
     for (const follower of followers.filter((i) => i.chat_id !== chat_id)) {
       range
@@ -289,7 +362,6 @@ user_delete_menu.dynamic(async (ctx) => {
         .row();
     }
   }
-
   return range;
 });
 
@@ -309,6 +381,8 @@ bot.command("start", async (ctx) => {
       const find_user = join.users.find((item) => item.toString() == user_id);
 
       if (!find_user) {
+        const admin_id = group.admin;
+        const admin = await User.findById(admin_id);
         await User.findByIdAndUpdate(
           user_id,
           {$addToSet: {groups: group_id}},
@@ -323,14 +397,21 @@ bot.command("start", async (ctx) => {
 
         await User.updateOne(
           {_id: user_id},
-          {$set: {selectedGroupId: group_id, screen: GROUP_DETAIL}, new: true}
+          {$set: {selectedGroupId: group_id, screen: GROUP_DETAIL}}
         );
+
+        const user_find = await User.findById(user_id);
 
         await ctx.reply(
           `${group.name} guruhi uchun xarajat yozishingiz va hisob-kitoblarni ko'rishingiz mumkin`,
           {
             reply_markup: keyboard_group_detail,
           }
+        );
+
+        await bot.api.sendMessage(
+          admin.chat_id,
+          `${user_find.name}  ${group.name} guruhiga qo'shildi`
         );
       }
     }
@@ -418,35 +499,7 @@ bot.hears(CALCULATION, async (ctx) => {
 
 // MY EXPENSES
 bot.hears(MY_EXPENSES, async (ctx) => {
-  const chat_id = ctx.message.from.id;
-  const user = await User.findByChatId(chat_id);
-  const group_id = user.selectedGroupId;
-  const group = await Group.findById(group_id);
-
-  const total_amount = await user.getTotalSpendingByGroup(group_id);
-
-  if (total_amount == 0) {
-    ctx.reply(`Siz ${group.name} guruhi uchun xarajat yozmagansiz`);
-    return;
-  }
-
-  const user_payments = await Payment.getUserPaymentsByGroup(
-    user._id,
-    group_id
-  );
-
-  let sending_text = `${group.name} guruhi uchun sarflagan xarajatlarim:  \n \n`;
-
-  user_payments.forEach((payment, index) => {
-    sending_text =
-      sending_text +
-      `${index + 1}. ${formatDateWithHours(
-        payment.createdAt
-      )}  ___  ${prettifyMoneyString(payment.amount)} ${payment.comment}\n`;
-  });
-  sending_text = sending_text + `\nJami: ${prettifyMoneyString(total_amount)}`;
-
-  ctx.reply(sending_text);
+  await sendMyexpenses(ctx);
 });
 
 // ALL_SPEND_LIST
@@ -456,7 +509,7 @@ bot.hears(ALL_SPEND_LIST, async (ctx) => {
   const group_id = user.selectedGroupId;
   const group = await Group.findById(group_id);
 
-  const users_list = await User.getAllUsersWithTotalSpendingByGroup(group_id);
+  const users_list = await User.getAllUsersWithTotalSpending(group_id);
   if (group.totalSpent == 0) {
     ctx.reply(`${group.name} guruhi uchun hali hech kim xarajat yozmagan`);
     return;
@@ -481,6 +534,15 @@ bot.hears(GROUP_MANAGE, async (ctx) => {
   const user = await User.findByChatId(chat_id);
   const group_id = user.selectedGroupId;
   const group = await Group.findById(group_id);
+
+  if (group.admin.toString() !== user._id.toString()) {
+    ctx.reply(
+      " Bu bo'lim faqat guruh admin(guruh yaratgan foydalanuvchi)i uchun  \n\nXarajatlarni tozalash shu bo'limda amalga oshiriladi"
+    );
+
+    return;
+  }
+
   const updatedUser = await User.findOneAndUpdate(
     {chat_id},
     {$set: {screen: GROUP_MANAGE_SCREEN}}
@@ -496,36 +558,53 @@ bot.hears(GROUP_MANAGE, async (ctx) => {
 // GROUP MANAGE HEARS
 bot.hears(CLEAR_EXPENSES, async (ctx) => {
   const chat_id = ctx.message.from.id;
-  const updatedUser = await User.findOneAndUpdate(
-    {chat_id},
-    {$set: {action: CONFIRM_CLEAR_EXPENSES, screen: CLEAR_EXPENSES_SCREEN}}
-  );
+  const user = await User.findByChatId(chat_id);
 
-  if (updatedUser) {
-    const keyboard = new Keyboard().text(CONFIRM).row().text(BACK).resized();
-    await ctx.reply(
-      `Xarajatlarni tozalashni tasdiqlang \n\nO'chirilgan ma'lumotlarni qayta tiklash imkoni majvud emas !!!`,
-      {
-        reply_markup: keyboard,
-      }
+  const group = await Group.findOne({
+    admin: user._id,
+    _id: user.selectedGroupId,
+  });
+
+  if (group) {
+    const updatedUser = await User.findOneAndUpdate(
+      {chat_id},
+      {$set: {action: CONFIRM_CLEAR_EXPENSES, screen: CLEAR_EXPENSES_SCREEN}}
     );
+
+    if (updatedUser) {
+      const keyboard = new Keyboard().text(CONFIRM).row().text(BACK).resized();
+      await ctx.reply(
+        `Xarajatlarni tozalashni tasdiqlang \n\nO'chirilgan ma'lumotlarni qayta tiklash imkoni majvud emas !!!`,
+        {
+          reply_markup: keyboard,
+        }
+      );
+    }
   }
 });
 
 bot.hears(EDIT_GROUP_NAME, async (ctx) => {
   const chat_id = ctx.message.from.id;
   const user = await User.findOne({chat_id}).populate("selectedGroupId");
-  const updatedUser = await User.findOneAndUpdate(
-    {chat_id},
-    {$set: {action: EDIT_GROUP_NAME_ACTION, screen: EDIT_GROUP_NAME_SCREEN}}
-  );
 
-  if (updatedUser) {
-    const group = user.selectedGroupId.name;
+  const group = await Group.findOne({
+    admin: user._id,
+    _id: user.selectedGroupId,
+  });
 
-    ctx.reply(`${group} uchun yangi nom kiriting:`, {
-      reply_markup: new Keyboard().text(BACK).resized(),
-    });
+  if (group) {
+    const updatedUser = await User.findOneAndUpdate(
+      {chat_id},
+      {$set: {action: EDIT_GROUP_NAME_ACTION, screen: EDIT_GROUP_NAME_SCREEN}}
+    );
+
+    if (updatedUser) {
+      const group = user.selectedGroupId.name;
+
+      ctx.reply(`${group} uchun yangi nom kiriting:`, {
+        reply_markup: new Keyboard().text(BACK).resized(),
+      });
+    }
   }
 });
 
@@ -533,7 +612,7 @@ bot.hears(GET_GROUP_JOIN_LINK, async (ctx) => {
   const chat_id = ctx.message.from.id;
   const user = await User.findByChatId(chat_id);
   const group_id = user.selectedGroupId;
-  const group = await Group.findById(group_id);
+  const group = await Group.findOne({_id: group_id, admin: user._id});
 
   if (group) {
     await User.findOneAndUpdate({chat_id}, {$set: {screen: GROUP_DETAIL}});
@@ -554,23 +633,29 @@ bot.hears(DELETE_USERS_BTN, async (ctx) => {
   const chat_id = ctx.message.from.id;
   const user = await User.findByChatId(chat_id);
 
-  const group = await Group.findOne({_id: user.selectedGroupId});
-  const followers = await User.find({groups: group._id});
-  if (
-    followers.length === 1 &&
-    followers?.[0]?._id.toString() === group.admin.toString()
-  ) {
-    ctx.reply("Guruhda sizdan boshqa foydalanuvchi yo'q");
-    return;
-  }
-
-  if (group.totalSpent !== 0) {
-    calculationExpenses(ctx, true);
-  }
-
-  await ctx.reply("O'chirish kerak bo'lgan foydalanuvchi ustiga bosing: ", {
-    reply_markup: user_delete_menu,
+  const group = await Group.findOne({
+    _id: user.selectedGroupId,
+    admin: user._id,
   });
+
+  if (group) {
+    const followers = await User.find({groups: group._id});
+    if (
+      followers.length === 1 &&
+      followers?.[0]?._id.toString() === group.admin.toString()
+    ) {
+      ctx.reply("Guruhda sizdan boshqa foydalanuvchi yo'q");
+      return;
+    }
+
+    if (group.totalSpent !== 0) {
+      calculationExpenses(ctx, true);
+    }
+
+    await ctx.reply("O'chirish kerak bo'lgan foydalanuvchi ustiga bosing: ", {
+      reply_markup: user_delete_menu,
+    });
+  }
 });
 
 bot.hears(DELETE_GROUP, async (ctx) => {
@@ -582,9 +667,9 @@ bot.hears(DELETE_GROUP, async (ctx) => {
   );
 
   const group_id = updatedUser.selectedGroupId;
-  const group = await Group.findById(group_id);
+  const group = await Group.findOne({_id: group_id, admin: updatedUser._id});
 
-  if (updatedUser) {
+  if (updatedUser && group) {
     const keyboard = new Keyboard().text(CONFIRM).row().text(BACK).resized();
     await ctx.reply(
       `${group.name} guruhi o'chirilishini tasdiqlang ❗️❗️ \n\nBarcha hisob-kitoblar 1 marta barcha foydalanuvchilarga yuboriladi \n\nGuruh o'chirilgandan keyin hisob-kitoblarni qayta ko'rib bo'lmaydi`,
@@ -601,12 +686,17 @@ bot.hears(CONFIRM, async (ctx) => {
   const screen = user?.screen;
   const selected_group_id = user.selectedGroupId;
 
-  if (screen === CLEAR_EXPENSES_SCREEN) {
+  const group = await Group.findOne({
+    _id: user.selectedGroupId,
+    admin: user._id,
+  });
+
+  if (screen === CLEAR_EXPENSES_SCREEN && group) {
     await calculationExpenses(ctx, true);
     await clearGroupExpenses(chat_id, selected_group_id);
   }
 
-  if (screen === DELETE_GROUP_SCREEN) {
+  if (screen === DELETE_GROUP_SCREEN && group) {
     await clearGroupExpenses(
       chat_id,
       selected_group_id,

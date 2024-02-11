@@ -140,12 +140,57 @@ UserSchema.statics.getAllUsersWithTotalSpendingByGroup = async function (
         },
       },
       {
-        $match: {"payments.group": groupId},
+        $match: {
+          "payments.group": groupId,
+        },
       },
       {
         $group: {
           _id: "$_id",
           name: {$first: "$name"},
+          totalAmount: {$sum: "$payments.amount"},
+        },
+      },
+    ]).exec();
+
+    return usersWithTotalSpending;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Static method to get total spending for all users in a specific group
+UserSchema.statics.getAllUsersWithTotalSpending = async function (groupId) {
+  const Payment = mongoose.model("Payment");
+
+  try {
+    const usersWithTotalSpending = await this.aggregate([
+      {
+        $match: {groups: groupId},
+      },
+      {
+        $lookup: {
+          from: "payments", // Replace with the actual name of your 'payments' collection
+          let: {userId: "$_id"},
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    {$eq: ["$payer", "$$userId"]},
+                    {$eq: ["$group", groupId]},
+                  ],
+                },
+              },
+            },
+          ],
+          as: "payments",
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          name: 1,
           totalAmount: {$sum: "$payments.amount"},
         },
       },

@@ -66,6 +66,42 @@ PaymentSchema.statics.getUserPaymentsByGroup = async function (
   }
 };
 
+// Method to delete a payment and update totalSpent in Group and User models
+PaymentSchema.statics.deletePaymentAndUpdateTotalSpent = async function (
+  paymentId
+) {
+  const Group = mongoose.model("Group");
+  const User = mongoose.model("User");
+
+  try {
+    // Find the payment to be deleted
+    const payment = await this.findById(paymentId);
+    if (!payment) {
+      throw new Error("Payment not found");
+    }
+
+    // Delete the payment
+    await this.findByIdAndDelete(paymentId);
+
+    // Update totalSpent in Group model
+    await Group.updateOne(
+      {_id: payment.group},
+      {$inc: {totalSpent: -payment.amount}}
+    );
+
+    // Update totalSpent.amount in User model
+    await User.updateOne(
+      {_id: payment.payer},
+      {$inc: {"totalSpent.$[elem].amount": -payment.amount}},
+      {arrayFilters: [{"elem.group": payment.group}]}
+    );
+
+    return true;
+  } catch (error) {
+    throw error;
+  }
+};
+
 // Add a post-save hook to update user's totalSpent after saving a payment
 PaymentSchema.post("save", function () {
   this.updateUserTotalSpent();
