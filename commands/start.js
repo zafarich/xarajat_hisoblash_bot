@@ -137,6 +137,14 @@ async function calculationExpenses(ctx, send_everyone = false) {
   }
 
   const followers = await User.find({groups: group_id}).populate("totalSpent");
+
+  if (followers?.length === 1) {
+    ctx.reply(
+      "Hisob-kitob qilish uchun guruhda kamida 2 ta odam bo'lishi kerak"
+    );
+    return;
+  }
+
   const numberOfFollowers = followers.length;
   const equalShare = parseInt(group.totalSpent / numberOfFollowers);
 
@@ -157,8 +165,9 @@ async function calculationExpenses(ctx, send_everyone = false) {
       given = prettifyMoneyString(get_money) + " ✅ oladi";
     }
     if (get_money == 0) {
-      given = " bermayi ham olmaydi ham 🟰";
+      given = " bir xil miqdorda xarajat yozilgan";
     }
+
     sending_text = sending_text + follower.name + `  ____  ` + given + `\n`;
   }
 
@@ -820,17 +829,32 @@ bot.on("message", async (ctx) => {
     const pattern = /^(\d+(\s+\S+)*)$/;
 
     if (!pattern.test(message)) {
-      ctx.reply("To'g'ri formatda kiriting !!!");
+      ctx.reply("To'g'ri formatda kiriting !!! \n\nMasalan 12000 nonga");
       return;
     }
 
     const amount = parseInt(message);
+
+    function isInteger(str) {
+      // Use a regular expression to check if the string is an integer
+      return /^-?\d+$/.test(str);
+    }
 
     let spaceIndex = message.indexOf(" ");
     let comment = "";
 
     if (spaceIndex !== -1) {
       comment = message.substring(spaceIndex + 1) || "";
+    }
+
+    if (isInteger(comment) || isInteger(comment.split(" ")?.[0])) {
+      ctx.reply("To'g'ri formatda kiriting !!! \n\nMasalan 12000 nonga");
+      return;
+    }
+
+    if (comment && (comment === "ming" || comment.split(" ")?.[0] === "ming")) {
+      ctx.reply("To'g'ri formatda kiriting !!! \n\nMasalan 12000 nonga");
+      return;
     }
 
     if (comment.split(" ")?.length > 5) {
