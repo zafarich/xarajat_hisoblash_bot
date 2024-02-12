@@ -7,7 +7,7 @@ const bot_name = process.env.BOT_NAME;
 
 function formatDateWithHours(isoDate) {
   const date = new Date(isoDate);
-  date.setHours(10);
+
   // Extract the date components
   const day = date.getDate().toString().padStart(2, "0");
   const month = (date.getMonth() + 1).toString().padStart(2, "0"); // Month is zero-based
@@ -103,7 +103,10 @@ async function sendGroupList(ctx) {
   const user = await User.findByChatId(chat_id);
 
   if (user?.groups?.length) {
-    await ctx.reply("Guruhlar: ", {reply_markup: groups_menu});
+    await ctx.reply(
+      "Guruhga harajat yozish uchun ustiga bosing \n\nGuruhlar 👇👇👇",
+      {reply_markup: groups_menu}
+    );
   } else {
     await ctx.reply(
       "Sizda guruhlar yo'q. \n\nGuruh yaratishingiz yoki guruhga qo'shilishingiz kerak"
@@ -123,7 +126,7 @@ async function returnHomePageButtons(text, ctx) {
 }
 
 async function calculationExpenses(ctx, send_everyone = false) {
-  const chat_id = ctx.message.from.id;
+  const chat_id = ctx.message?.from?.id || ctx?.update?.callback_query?.from.id;
   const user = await User.findByChatId(chat_id);
   const group_id = user.selectedGroupId;
   const group = await Group.findById(group_id);
@@ -143,7 +146,8 @@ async function calculationExpenses(ctx, send_everyone = false) {
     equalShare
   )} dan \n \n`;
   for (const follower of followers) {
-    const get_money = follower.getTotalSpentInGroup(group_id) - equalShare;
+    const get_money =
+      (await follower.getTotalSpentInGroup(group_id)) - equalShare;
     let given = "";
 
     if (get_money < 0) {
@@ -160,7 +164,7 @@ async function calculationExpenses(ctx, send_everyone = false) {
 
   if (send_everyone) {
     for (const follower of followers) {
-      bot.api.sendMessage(follower.chat_id, sending_text);
+      await bot.api.sendMessage(follower.chat_id, sending_text);
     }
   } else {
     ctx.reply(sending_text);
@@ -285,7 +289,7 @@ groups_menu.dynamic(async (ctx) => {
 
   user?.groups?.forEach((group) => {
     range
-      .text(group.name, async () => {
+      .text(`👥  ${group.name}`, async () => {
         await User.updateOne(
           {_id: user._id},
           {$set: {selectedGroupId: group._id, screen: GROUP_DETAIL}, new: true}
@@ -328,6 +332,8 @@ user_delete_menu.dynamic(async (ctx) => {
             }
           );
 
+          await calculationExpenses(ctx, true);
+
           await User.updateOne(
             {_id: follower._id},
             {$set: {selectedGroupId: null}, $pull: {groups: group._id}}
@@ -352,12 +358,9 @@ user_delete_menu.dynamic(async (ctx) => {
             {$set: {screen: HOME, action: ""}, new: true}
           );
 
-          ctx.reply(
-            `${follower.name} ${group.name} guruhidan o'chirildi \n\nQolgan foydalanuvchilar:`,
-            {
-              reply_markup: user_delete_menu,
-            }
-          );
+          ctx.reply(`${follower.name} ${group.name} guruhidan o'chirildi`, {
+            reply_markup: user_delete_menu,
+          });
         })
         .row();
     }
@@ -648,10 +651,6 @@ bot.hears(DELETE_USERS_BTN, async (ctx) => {
       return;
     }
 
-    if (group.totalSpent !== 0) {
-      calculationExpenses(ctx, true);
-    }
-
     await ctx.reply("O'chirish kerak bo'lgan foydalanuvchi ustiga bosing: ", {
       reply_markup: user_delete_menu,
     });
@@ -697,6 +696,8 @@ bot.hears(CONFIRM, async (ctx) => {
   }
 
   if (screen === DELETE_GROUP_SCREEN && group) {
+    await calculationExpenses(ctx, true);
+
     await clearGroupExpenses(
       chat_id,
       selected_group_id,
@@ -808,7 +809,7 @@ bot.on("message", async (ctx) => {
     await join.save();
 
     await ctx.reply(
-      `${message} guruh yaratildi \n \n Qo'shilish uchun havola:`
+      `${message} guruh yaratildi \n \n Boshqa guruhdoshlaringiz shu guruhga qo'shilish uchun quyidagi havolani ularga jo'nating:`
     );
     await returnHomePageButtons("👇👇👇", ctx);
     await ctx.reply(`https://t.me/${bot_name}?start=${join._id}`);
@@ -870,7 +871,7 @@ bot.on("message", async (ctx) => {
       await ctx.reply(
         `${group.name} guruhi uchun ${amount} ${
           comment ? `( ${comment} )` : ""
-        } xarajat yozildi`,
+        } xarajat yozildi \n\nAgar xato bo'lgan bo'lsa mening xarajatlarim bo'limidan o'chirishingiz mumkin`,
         {
           reply_markup: keyboard_group_detail,
         }
