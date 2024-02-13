@@ -454,7 +454,7 @@ bot.command("start", async (ctx) => {
   }
 
   await returnHomePageButtons(
-    "Guruhlar o'rtasida xisob-kitobni amalga oshiruvchi botga xush kelibsiz",
+    `Guruhlar o'rtasida xisob-kitobni amalga oshiruvchi botga xush kelibsiz\n\nBu bot orqali siz guruhdoshlar(kvartiradoshlar) o'rtasida qilingan xarajatlarni oson va avtomatlashtirilgan holda hisob-kitob qilishingiz mumkin\n\nFoydalanish:\n\n1. Guruh yaratishni bosing va guruh nomini kiriting\n\n2. Bot sizga boshqa guruhdoshlaringiz qo'shilishi uchun havola bera. Shu havolani qo'shilishi kerak bo'lgan odamlarga jo'natasiz va ular shu orqali guruhga qo'shiladi\n\n3. Xarajat yozish - bu bo'limda siz qilgan xarajatingizni yozishingiz mumkin\n\n4. Hisob-kitob - bu bo'limda oldi-berdi xarajatlari hisb-kitob qilinadi\n\n5. Mening xarajatlarim - o'zingizning xarajatlaringizni ko'rishingiz va o'chirishingiz mumkin\n\n6. Umumiy - umumiy kim qancha xarajat yozganini ko'rish mumkin\n\n7. Guruh boshqaruvi - guruh xarajatlarini tozalash, nomini o'zgartirish, foydalanuvchilarni chiqarib tashlash, guruhni o'chirish amallarini bajarishingiz mumkin\n`,
     ctx
   );
 });
@@ -817,10 +817,18 @@ bot.on("message", async (ctx) => {
     const join = new Join({group: group._id});
     await join.save();
 
-    await ctx.reply(
-      `${message} guruh yaratildi \n \n Boshqa guruhdoshlaringiz shu guruhga qo'shilish uchun quyidagi havolani ularga jo'nating:`
+    await User.updateOne(
+      {_id: user._id},
+      {$set: {selectedGroupId: group._id, screen: GROUP_DETAIL}, new: true}
     );
-    await returnHomePageButtons("👇👇👇", ctx);
+
+    await ctx.reply(
+      `${message} guruh yaratildi \n \nBoshqa guruhdoshlaringiz shu guruhga qo'shilish uchun quyidagi havolani ularga jo'nating 👇👇👇`,
+      {
+        reply_markup: keyboard_group_detail,
+      }
+    );
+
     await ctx.reply(`https://t.me/${bot_name}?start=${join._id}`);
   }
 
