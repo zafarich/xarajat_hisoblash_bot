@@ -133,7 +133,10 @@ async function calculationExpenses(ctx, send_everyone = false) {
   const group = await Group.findById(group_id);
 
   if (group.totalSpent == 0) {
-    ctx.reply(`${group.name} guruhi uchun hali hech kim xarajat yozmagan`);
+    await ctx.reply(
+      `${group.name} guruhi uchun hali hech kim xarajat yozmagan\n\n⚠️ Guruh boshqaruvi bo'limidan qo'shilish havolasini oling va uni guruhdoshlaringizga jo'nating`
+    );
+
     return;
   }
 
