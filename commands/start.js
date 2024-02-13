@@ -42,6 +42,7 @@ const {
   DELETE_GROUP,
   DELETE_USERS_BTN,
   DELETE_MY_EXPENSES,
+  HOME_PAGE_LIST,
 } = require("../utils/keyboard_constants");
 const {
   HOME,
@@ -76,7 +77,7 @@ const keyboard_group_detail = new Keyboard()
   .row()
   .text(GROUP_MANAGE)
   .row()
-  .text(BACK)
+  .text(HOME_PAGE_LIST)
   .resized();
 
 const keyboard_group_mange = new Keyboard()
@@ -795,6 +796,14 @@ bot.hears(BACK, async (ctx) => {
       reply_markup: keyboard_group_mange,
     });
   }
+});
+bot.hears(HOME_PAGE_LIST, async (ctx) => {
+  const chat_id = ctx.message.from.id;
+  const user = await User.findByChatId(chat_id);
+
+  await User.findOneAndUpdate({chat_id}, {$set: {action: "", screen: HOME}});
+  sendGroupList(ctx);
+  returnHomePageButtons("Bosh sahifa", ctx);
 });
 
 bot.on("message", async (ctx) => {

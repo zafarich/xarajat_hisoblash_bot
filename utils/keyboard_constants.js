@@ -16,6 +16,7 @@ const DELETE_MY_EXPENSES = "❌ Xarajatlarni o'chirish";
 
 const CONFIRM = "✅ Tasdiqlash";
 const BACK = "🔙 Orqaga";
+const HOME_PAGE_LIST = "🔙 Boshqa guruhlar ro'yxati";
 
 module.exports = {
   GROUPS,
@@ -33,4 +34,5 @@ module.exports = {
   DELETE_GROUP,
   DELETE_USERS_BTN,
   DELETE_MY_EXPENSES,
+  HOME_PAGE_LIST,
 };
