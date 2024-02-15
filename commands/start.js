@@ -105,7 +105,7 @@ async function sendGroupList(ctx) {
 
   if (user?.groups?.length) {
     await ctx.reply(
-      "Guruhga harajat yozish uchun ustiga bosing \n\nGuruhlar 👇👇👇",
+      "Guruhga xarajat yozish uchun ustiga bosing \n\nGuruhlar 👇👇👇",
       {reply_markup: groups_menu}
     );
   } else {
@@ -500,7 +500,7 @@ bot.hears(SPEND_MONEY, async (ctx) => {
   if (updatedUser) {
     const keyboard = new Keyboard().text(BACK).row().resized();
     await ctx.reply(
-      "Xarajat uchun summa va izohni kiriting \nIzoh kiritish ixtiyoriy \n \n Masalan: 12000 nonga",
+      "Xarajat uchun summa va izohni kiriting \nIzoh kiritish ixtiyoriy \n \nMasalan: 12000 nonga",
       {
         reply_markup: keyboard,
       }
