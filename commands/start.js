@@ -291,6 +291,19 @@ async function sendMyexpenses(ctx) {
   });
 }
 
+async function createGroupStart(ctx) {
+  const chat_id = ctx.message.from.id;
+
+  await User.findOneAndUpdate(
+    {chat_id},
+    {$set: {action: CREATE_GROUP_ACTION, screen: GROUP_CREATING}}
+  );
+  const keyboard = new Keyboard().text(BACK).row().resized();
+  await ctx.reply("Guruh nomini kiriting:", {
+    reply_markup: keyboard,
+  });
+}
+
 const groups_menu = new Menu("groups");
 bot.use(groups_menu);
 groups_menu.dynamic(async (ctx) => {
@@ -439,12 +452,16 @@ bot.command("start", async (ctx) => {
   };
   if (!user) {
     let newUser = new User(user_payload);
-    newUser.save();
-    if (true) {
-      // user?.groups?.length < 5;
+    await newUser.save();
+
+    if (!join_id) {
+      ctx.reply(
+        "⚠️ Boshlash uchun guruh yarating va qo'shilish havolasini guruhdoshlarga jo'nating"
+      );
+      createGroupStart(ctx);
+    }
+    if (group) {
       FollowNewGroup(newUser._id, group?._id);
-    } else {
-      await ctx.reply("Maksimal guruhlar soni 5 ta");
     }
   } else {
     await User.updateOne(
@@ -470,23 +487,7 @@ bot.hears(GROUPS, async (ctx) => {
   sendGroupList(ctx);
 });
 bot.hears(CREATE_GROUP, async (ctx) => {
-  const chat_id = ctx.message.from.id;
-
-  const user = await User.findOne({chat_id}).populate("groups");
-
-  if (true) {
-    // user?.groups?.length < 5
-    await User.findOneAndUpdate(
-      {chat_id},
-      {$set: {action: CREATE_GROUP_ACTION, screen: GROUP_CREATING}}
-    );
-    const keyboard = new Keyboard().text(BACK).row().resized();
-    await ctx.reply("Guruh nomini kiriting:", {
-      reply_markup: keyboard,
-    });
-  } else {
-    await ctx.reply("Maksimal guruhlar soni 5 ta");
-  }
+  createGroupStart(ctx);
 });
 
 // GROUP DETAIL - MAIN BOARD
