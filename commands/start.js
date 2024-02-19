@@ -177,7 +177,11 @@ async function calculationExpenses(ctx, send_everyone = false) {
 
   if (send_everyone) {
     for (const follower of followers) {
-      await bot.api.sendMessage(follower.chat_id, sending_text);
+      await bot.api
+        ?.sendMessage(follower.chat_id, sending_text)
+        .catch((err) => {
+          console.log("err", err);
+        });
     }
   } else {
     ctx.reply(sending_text);
