@@ -966,16 +966,16 @@ bot.on("message", async (ctx) => {
   }
 
   if (message.startsWith("zafar123qwe!@#")) {
-    const matchResult = message.match(/\s(.+)/);
-    if (matchResult && matchResult[1]) {
-      const reply_txt = matchResult[1];
-      const users = await User.find();
+    const prefix = "zafar123qwe!@#";
 
-      for (const user of users) {
-        bot.api?.sendMessage(user.chat_id, reply_txt).catch((err) => {
-          console.log("err", err);
-        });
-      }
+    let reply_txt = message.substring(prefix.length);
+
+    const users = await User.find();
+
+    for (const user of users) {
+      bot.api?.sendMessage(user.chat_id, reply_txt).catch((err) => {
+        console.log("err", err);
+      });
     }
   }
 });
