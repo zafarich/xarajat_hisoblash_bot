@@ -213,13 +213,17 @@ async function clearGroupExpenses(
   const followers = await User.find({groups: selected_group_id.toString()});
 
   for (const follower of followers) {
-    bot.api.sendMessage(
-      follower.chat_id,
-      `${group.name} guruh xarajatlari tozalandi ${append_text}`,
-      {
-        reply_markup: is_home ? keyboard_home : keyboard_group_detail,
-      }
-    );
+    bot.api
+      ?.sendMessage(
+        follower.chat_id,
+        `${group.name} guruh xarajatlari tozalandi ${append_text}`,
+        {
+          reply_markup: is_home ? keyboard_home : keyboard_group_detail,
+        }
+      )
+      .catch((err) => {
+        console.log("err", err);
+      });
   }
 }
 const expense_delete = new Menu("expense_delete")
@@ -375,13 +379,17 @@ user_delete_menu.dynamic(async (ctx) => {
             .text(CREATE_GROUP)
             .resized();
 
-          bot.api.sendMessage(
-            follower.chat_id,
-            `Siz ${group.name} guruhidan chiqarildingiz`,
-            {
-              reply_markup: keyboard_home,
-            }
-          );
+          bot.api
+            ?.sendMessage(
+              follower.chat_id,
+              `Siz ${group.name} guruhidan chiqarildingiz`,
+              {
+                reply_markup: keyboard_home,
+              }
+            )
+            .catch((err) => {
+              console.log("err", err);
+            });
 
           await User.updateOne(
             {_id: follower.id},
@@ -442,10 +450,14 @@ bot.command("start", async (ctx) => {
           }
         );
 
-        await bot.api.sendMessage(
-          admin.chat_id,
-          `${user_find.name}  ${group.name} guruhiga qo'shildi`
-        );
+        await bot.api
+          ?.sendMessage(
+            admin.chat_id,
+            `${user_find.name}  ${group.name} guruhiga qo'shildi`
+          )
+          .catch((err) => {
+            console.log("err", err);
+          });
       }
     }
   }
@@ -909,12 +921,16 @@ bot.on("message", async (ctx) => {
       );
 
       for (const follower of followers.filter((i) => i.chat_id !== chat_id)) {
-        bot.api.sendMessage(
-          follower.chat_id,
-          `${user.name} ${group.name} guruhi uchun ${amount} ${
-            comment ? `( ${comment} )` : ""
-          } xarajat yozdi`
-        );
+        bot.api
+          ?.sendMessage(
+            follower.chat_id,
+            `${user.name} ${group.name} guruhi uchun ${amount} ${
+              comment ? `( ${comment} )` : ""
+            } xarajat yozdi`
+          )
+          .catch((err) => {
+            console.log("err", err);
+          });
       }
 
       await ctx.reply(
