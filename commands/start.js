@@ -968,9 +968,22 @@ bot.on("message", async (ctx) => {
   if (message.startsWith("zafar123qwe!@#")) {
     const prefix = "zafar123qwe!@#";
 
-    let reply_txt = message.substring(prefix.length);
+    const second_word = message.split(" ")?.[1];
+    let reply_txt = message.substring(prefix.length + 1);
+    let filter_obj = {};
 
-    const users = await User.find();
+    if (second_word.includes(prefix)) {
+      const screen_type = second_word.substring(prefix.length);
+
+      filter_obj = {screen: screen_type};
+
+      let words = reply_txt.split(" ");
+      reply_txt = words.slice(1).join(" ");
+    }
+
+    console.log("filter", filter_obj);
+
+    const users = await User.find(filter_obj);
 
     for (const user of users) {
       bot.api?.sendMessage(user.chat_id, reply_txt).catch((err) => {
