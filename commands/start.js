@@ -409,6 +409,12 @@ user_delete_menu.dynamic(async (ctx) => {
 bot.command("start", async (ctx) => {
   const join_id = ObjectId.isValid(ctx?.match) ? ctx?.match : null;
   const chat_id = ctx.message.chat.id;
+
+  if (chat_id === 856065276) {
+    await ctx.reply(`Blokdasan Sheppi`);
+    return;
+  }
+
   const name = ctx.message.chat.first_name;
   const user = await User.findOne({chat_id: chat_id});
   const join = await Join.findOne({_id: join_id});
